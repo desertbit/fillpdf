@@ -8,7 +8,7 @@ Currently this library only supports PDF text field values. Feel free to add sup
 
 There is an example in the sample directory:
 
-```
+```go
 package main
 
 import (
