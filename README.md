@@ -4,6 +4,11 @@ FillPDF is a golang library to easily fill PDF forms. This library uses the pdft
 Currently this library only supports PDF text field values. Feel free to add support to more form types.
 
 
+## Documentation 
+
+Check the Documentation at [GoDoc.org](https://godoc.org/github.com/desertbit/fillpdf).
+
+
 ## Sample
 
 There is an example in the sample directory:
