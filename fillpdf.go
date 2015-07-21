@@ -32,7 +32,7 @@ import (
 // This is a key value map.
 type Form map[string]interface{}
 
-// Fill a PDF form with the specified form values and create a final filles PDF file.
+// Fill a PDF form with the specified form values and create a final filled PDF file.
 // One variadic boolean specifies, whenever to overwrite the destination file if it exists.
 func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err error) {
 	// Get the absolute paths.
