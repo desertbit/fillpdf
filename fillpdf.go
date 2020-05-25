@@ -38,17 +38,17 @@ func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err er
 	// Get the absolute paths.
 	formPDFFile, err = filepath.Abs(formPDFFile)
 	if err != nil {
-		return fmt.Errorf("failed to create the absolute path: %v", err)
+		return fmt.Errorf("failed to create the absolute path: %+v", err)
 	}
 	destPDFFile, err = filepath.Abs(destPDFFile)
 	if err != nil {
-		return fmt.Errorf("failed to create the absolute path: %v", err)
+		return fmt.Errorf("failed to create the absolute path: %+v", err)
 	}
 
 	// Check if the form file exists.
 	e, err := exists(formPDFFile)
 	if err != nil {
-		return fmt.Errorf("failed to check if form PDF file exists: %v", err)
+		return fmt.Errorf("failed to check if form PDF file exists: %+v", err)
 	} else if !e {
 		return fmt.Errorf("form PDF file does not exists: '%s'", formPDFFile)
 	}
@@ -56,13 +56,13 @@ func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err er
 	// Check if the pdftk utility exists.
 	_, err = exec.LookPath("pdftk")
 	if err != nil {
-		return fmt.Errorf("pdftk utility is not installed!")
+		return fmt.Errorf("pdftk utility is not installed")
 	}
 
 	// Create a temporary directory.
 	tmpDir, err := ioutil.TempDir("", "fillpdf-")
 	if err != nil {
-		return fmt.Errorf("failed to create temporary directory: %v", err)
+		return fmt.Errorf("failed to create temporary directory: %+v", err)
 	}
 
 	// Remove the temporary directory on defer again.
@@ -70,38 +70,69 @@ func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err er
 		errD := os.RemoveAll(tmpDir)
 		// Log the error only.
 		if errD != nil {
-			log.Printf("fillpdf: failed to remove temporary directory '%s' again: %v", tmpDir, errD)
+			log.Printf("fillpdf: failed to remove temporary directory '%s' again: %+v", tmpDir, errD)
 		}
 	}()
 
-	// Create the temporary output file path.
-	outputFile := filepath.Clean(tmpDir + "/output.pdf")
+	// 1. Generate an FDF file.
+	// create the temporary intermediate output file path.
+	intermediateOutputFile := filepath.Clean(tmpDir + "/intermediate-output.pdf")
 
-	// Create the fdf data file.
-	fdfFile := filepath.Clean(tmpDir + "/data.fdf")
-	err = createFdfFile(form, fdfFile)
+	// create an FDF file from the input form.
+	inputFDFFile := filepath.Clean(tmpDir + "/input.fdf")
+	err = createFDFFile(form, inputFDFFile)
 	if err != nil {
-		return fmt.Errorf("failed to create fdf form data file: %v", err)
+		return fmt.Errorf("failed to create FDF file from the input form: %+v", err)
 	}
 
-	// Create the pdftk command line arguments.
+	// 2. Generate a PDF file with need_appearances.
+	// create the pdftk command-line arguments.
 	args := []string{
 		formPDFFile,
-		"fill_form", fdfFile,
-		"output", outputFile,
-		"flatten",
+		"fill_form", inputFDFFile,
+		"output", intermediateOutputFile,
+		"need_appearances",
 	}
 
-	// Run the pdftk utility.
+	// run the pdftk utility.
 	err = runCommandInPath(tmpDir, "pdftk", args...)
 	if err != nil {
-		return fmt.Errorf("pdftk error: %v", err)
+		return fmt.Errorf("pdftk error: %+v\n%s\n%+v", err, tmpDir, args)
+	}
+
+	// 3. Export an FDF file out of it.
+	// create the pdftk command-line arguments.
+	exportedFDF := filepath.Clean(tmpDir + "/exported.fdf")
+	args = []string{
+		intermediateOutputFile,
+		"generate_FDF",
+		"output", exportedFDF,
+	}
+	// run the pdftk utility.
+	err = runCommandInPath(tmpDir, "pdftk", args...)
+	if err != nil {
+		return fmt.Errorf("pdftk error: %+v\n%s\n%+v", err, tmpDir, args)
+	}
+
+	// 4. Generate a flattened PDF file out of the exported FDF file.
+	// create the pdftk command-line arguments.
+	finalOutputFile := filepath.Clean(tmpDir + "/final-output.pdf")
+	args = []string{
+		intermediateOutputFile,
+		"fill_form", exportedFDF,
+		"output", finalOutputFile,
+		"flatten",
+	}
+	// run the pdftk utility.
+	err = runCommandInPath(tmpDir, "pdftk", args...)
+	if err != nil {
+		return fmt.Errorf("pdftk error: %+v\n%s\n%+v", err, tmpDir, args)
 	}
 
 	// Check if the destination file exists.
 	e, err = exists(destPDFFile)
 	if err != nil {
-		return fmt.Errorf("failed to check if destination PDF file exists: %v", err)
+		return fmt.Errorf("failed to check if destination PDF file exists: %+v", err)
 	} else if e {
 		if len(overwrite) == 0 || !overwrite[0] {
 			return fmt.Errorf("destination PDF file already exists: '%s'", destPDFFile)
@@ -109,20 +140,20 @@ func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err er
 
 		err = os.Remove(destPDFFile)
 		if err != nil {
-			return fmt.Errorf("failed to remove destination PDF file: %v", err)
+			return fmt.Errorf("failed to remove destination PDF file: %+v", err)
 		}
 	}
 
 	// On success, copy the output file to the final destination.
-	err = copyFile(outputFile, destPDFFile)
+	err = copyFile(finalOutputFile, destPDFFile)
 	if err != nil {
-		return fmt.Errorf("failed to copy created output PDF to final destination: %v", err)
+		return fmt.Errorf("failed to copy created output PDF to final destination: %+v", err)
 	}
 
 	return nil
 }
 
-func createFdfFile(form Form, path string) error {
+func createFDFFile(form Form, path string) error {
 	// Create the file.
 	file, err := os.Create(path)
 	if err != nil {
@@ -133,28 +164,30 @@ func createFdfFile(form Form, path string) error {
 	// Create a new writer.
 	w := bufio.NewWriter(file)
 
-	// Write the fdf header.
-	fmt.Fprintln(w, fdfHeader)
+	// Write the FDF header.
+	fmt.Fprintln(w, FDFHeader)
 
 	// Write the form data.
 	for key, value := range form {
 		fmt.Fprintf(w, "<< /T (%s) /V (%v)>>\n", key, value)
 	}
 
-	// Write the fdf footer.
-	fmt.Fprintln(w, fdfFooter)
+	// Write the FDF footer.
+	fmt.Fprintln(w, FDFFooter)
 
 	// Flush everything.
 	return w.Flush()
 }
 
-const fdfHeader = `%FDF-1.2
+// FDFHeader marks the begining of the FDF file.
+const FDFHeader = `%FDF-1.2
 %,,oe"
 1 0 obj
 <<
 /FDF << /Fields [`
 
-const fdfFooter = `]
+// FDFFooter marks the end of the FDF file.
+const FDFFooter = `]
 >>
 >>
 endobj
