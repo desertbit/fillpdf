@@ -8,6 +8,10 @@ Currently this library only supports PDF text field values. Feel free to add sup
 
 Check the Documentation at [GoDoc.org](https://godoc.org/github.com/desertbit/fillpdf).
 
+## Requirements
+
+FillPDF, under the hood, leverages the toolchain provided by PDFtk. Windows and Mac users need to install this dependency separately, the pdftk-sever executable is available [here](https://www.pdflabs.com/tools/pdftk-server/). After the installation is complete ensure that the install directory has been added to the system PATH (should be added automatically during the installation process).
+
 
 ## Sample
 
