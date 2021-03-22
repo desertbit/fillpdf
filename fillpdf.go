@@ -32,9 +32,23 @@ import (
 // This is a key value map.
 type Form map[string]interface{}
 
+// Options represents the options to alter the PDF filling process
+type Options struct {
+	// Overwrite will overwrite any pre existing filled PDF
+	Overwrite bool
+	// Flatten will flatten the document making the form fields no longer editable
+	Flatten bool
+}
+
+// Initialize default options to use if the user did not specify them.
+var opts = Options{
+	Overwrite: true,
+	Flatten:   true,
+}
+
 // Fill a PDF form with the specified form values and create a final filled PDF file.
-// One variadic boolean specifies, whenever to overwrite the destination file if it exists.
-func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err error) {
+// The options parameter alters few aspects of the generation.
+func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err error) {
 	// Get the absolute paths.
 	formPDFFile, err = filepath.Abs(formPDFFile)
 	if err != nil {
@@ -89,7 +103,16 @@ func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err er
 		formPDFFile,
 		"fill_form", fdfFile,
 		"output", outputFile,
-		"flatten",
+	}
+
+	// If the user provided the options we overwrite the defaults with the given struct.
+	if len(options) > 0 {
+		opts = options[0]
+	}
+
+	// If the user specified to flatten the output PDF we append the related parameter.
+	if opts.Flatten {
+		args = append(args, "flatten")
 	}
 
 	// Run the pdftk utility.
@@ -103,7 +126,7 @@ func Fill(form Form, formPDFFile, destPDFFile string, overwrite ...bool) (err er
 	if err != nil {
 		return fmt.Errorf("failed to check if destination PDF file exists: %v", err)
 	} else if e {
-		if len(overwrite) == 0 || !overwrite[0] {
+		if !opts.Overwrite {
 			return fmt.Errorf("destination PDF file already exists: '%s'", destPDFFile)
 		}
 
