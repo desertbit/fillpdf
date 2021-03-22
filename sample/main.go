@@ -10,7 +10,7 @@ func main() {
 	// Create the form values.
 	form := fillpdf.Form{
 		"field_1": "Hello",
-		"field_2": "World",
+		"field_2": "Wörld",
 	}
 
 	// Fill the form PDF with our values.

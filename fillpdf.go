@@ -26,6 +26,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/gdamore/encoding"
 )
 
 // Form represents the PDF form.
@@ -130,6 +132,10 @@ func createFdfFile(form Form, path string) error {
 	}
 	defer file.Close()
 
+	// pdftk does not support UTF-8. To support at least some special characters,
+	// let's use the Latin-1 encoding.
+	enc := encoding.ISO8859_1.NewEncoder()
+
 	// Create a new writer.
 	w := bufio.NewWriter(file)
 
@@ -137,8 +143,14 @@ func createFdfFile(form Form, path string) error {
 	fmt.Fprintln(w, fdfHeader)
 
 	// Write the form data.
+	var valueStr string
 	for key, value := range form {
-		fmt.Fprintf(w, "<< /T (%s) /V (%v)>>\n", key, value)
+		// Convert to Latin-1.
+		valueStr, err = enc.String(fmt.Sprintf("%v", value))
+		if err != nil {
+			return fmt.Errorf("failed to convert string to Latin-1")
+		}
+		fmt.Fprintf(w, "<< /T (%s) /V (%s)>>\n", key, valueStr)
 	}
 
 	// Write the fdf footer.
