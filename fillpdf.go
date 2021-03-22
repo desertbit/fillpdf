@@ -42,15 +42,22 @@ type Options struct {
 	Flatten bool
 }
 
-// Initialize default options to use if the user did not specify them.
-var opts = Options{
-	Overwrite: true,
-	Flatten:   true,
+func defaultOptions() Options {
+	return Options{
+		Overwrite: true,
+		Flatten:   true,
+	}
 }
 
 // Fill a PDF form with the specified form values and create a final filled PDF file.
 // The options parameter alters few aspects of the generation.
 func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err error) {
+	// If the user provided the options we overwrite the defaults with the given struct.
+	opts := defaultOptions()
+	if len(options) > 0 {
+		opts = options[0]
+	}
+
 	// Get the absolute paths.
 	formPDFFile, err = filepath.Abs(formPDFFile)
 	if err != nil {
@@ -105,11 +112,6 @@ func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err e
 		formPDFFile,
 		"fill_form", fdfFile,
 		"output", outputFile,
-	}
-
-	// If the user provided the options we overwrite the defaults with the given struct.
-	if len(options) > 0 {
-		opts = options[0]
 	}
 
 	// If the user specified to flatten the output PDF we append the related parameter.
