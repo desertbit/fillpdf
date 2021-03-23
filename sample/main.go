@@ -18,4 +18,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Fill the form PDF with our values.
+	err = fillpdf.Stamp("stamp.pdf", "form.pdf", "filled.pdf", true)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
