@@ -58,7 +58,7 @@ func GetFields(formPDFFile string) ([]Field, error) {
 		field := Field{}
 
 		for _, line := range lines {
-			props := strings.SplitN(line, ": ", 1)
+			props := strings.SplitN(line, ": ", 2)
 
 			if len(props) != 2 {
 				continue
