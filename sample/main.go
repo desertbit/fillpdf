@@ -18,4 +18,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	fields, err := fillpdf.GetFields("form.pdf")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("%+v", fields)
 }

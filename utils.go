@@ -84,3 +84,16 @@ func runCommandInPath(dir, name string, args ...string) error {
 
 	return nil
 }
+
+func runCommandWithResults(name string, args ...string) (string, error) {
+	var stderr bytes.Buffer
+	cmd := exec.Command(name, args...)
+	cmd.Stderr = &stderr
+
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf(strings.TrimSpace(stderr.String()))
+	}
+
+	return string(out), nil
+}
