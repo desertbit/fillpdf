@@ -25,16 +25,15 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 
 	"github.com/gdamore/encoding"
 )
 
-var (
-	// pdftk does not support UTF-8. To support at least some special characters,
-	// let's use the Latin-1 encoding.
-	latin1Encoder = encoding.ISO8859_1.NewEncoder()
-)
+// pdftk does not support UTF-8. To support at least some special characters,
+// let's use the Latin-1 encoding.
+var latin1Encoder = encoding.ISO8859_1.NewEncoder()
 
 // Form represents the PDF form.
 // This is a key value map.
@@ -46,12 +45,15 @@ type Options struct {
 	Overwrite bool
 	// Flatten will flatten the document making the form fields no longer editable
 	Flatten bool
+	// UseXFDF will use xfdf instead of xdf
+	UseXFDF bool
 }
 
 func defaultOptions() Options {
 	return Options{
 		Overwrite: true,
 		Flatten:   true,
+		UseXFDF:   true,
 	}
 }
 
@@ -104,19 +106,29 @@ func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err e
 	}()
 
 	// Create the temporary output file path.
-	outputFile := filepath.Clean(tmpDir + "/output.pdf")
+	outputFile := filepath.Clean(path.Join(tmpDir, "output.pdf"))
+
+	definitionFileName := "data.fdf"
+	if opts.UseXFDF {
+		definitionFileName = "data.xfdf"
+	}
 
 	// Create the fdf data file.
-	fdfFile := filepath.Clean(tmpDir + "/data.fdf")
-	err = createFdfFile(form, fdfFile)
-	if err != nil {
-		return fmt.Errorf("failed to create fdf form data file: %v", err)
+	definitionFile := filepath.Clean(path.Join(tmpDir, definitionFileName))
+	if opts.UseXFDF {
+		if err := createXFDFFile(form, definitionFile); err != nil {
+			return fmt.Errorf("failed to create xfdf form file: %w", err)
+		}
+	} else {
+		if err := createFdfFile(form, definitionFile); err != nil {
+			return fmt.Errorf("failed to create fdf form data file: %v", err)
+		}
 	}
 
 	// Create the pdftk command line arguments.
 	args := []string{
 		formPDFFile,
-		"fill_form", fdfFile,
+		"fill_form", definitionFile,
 		"output", outputFile,
 	}
 
