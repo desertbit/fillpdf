@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/gdamore/encoding"
 )
@@ -46,12 +47,15 @@ type Options struct {
 	Overwrite bool
 	// Flatten will flatten the document making the form fields no longer editable
 	Flatten bool
+	// Remove metadata
+	RemoveMetadata bool
 }
 
 func defaultOptions() Options {
 	return Options{
-		Overwrite: true,
-		Flatten:   true,
+		Overwrite:      true,
+		Flatten:        true,
+		RemoveMetadata: false,
 	}
 }
 
@@ -94,6 +98,15 @@ func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err e
 		return fmt.Errorf("failed to create temporary directory: %v", err)
 	}
 
+	var metadataFile string
+	if opts.RemoveMetadata {
+		metadataFile = filepath.Clean(tmpDir + "/metadata.tmp")
+		errM := createMetadataFile(formPDFFile, metadataFile)
+		if errM != nil {
+			return fmt.Errorf("failed to create metadata file: %v", errM)
+		}
+	}
+
 	// Remove the temporary directory on defer again.
 	defer func() {
 		errD := os.RemoveAll(tmpDir)
@@ -126,9 +139,23 @@ func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err e
 	}
 
 	// Run the pdftk utility.
-	err = runCommandInPath(tmpDir, "pdftk", args...)
+	_, err = runCommandInPath(tmpDir, "pdftk", args...)
 	if err != nil {
 		return fmt.Errorf("pdftk error: %v", err)
+	}
+
+	if opts.RemoveMetadata {
+		outputFile2 := filepath.Clean(tmpDir + "output2.pdf")
+		args = []string{
+			outputFile,
+			"update_info", metadataFile,
+			"output", outputFile2,
+		}
+		_, err = runCommandInPath(tmpDir, "pdftk", args...)
+		if err != nil {
+			return fmt.Errorf("pdftk error: %v", err)
+		}
+		outputFile = outputFile2
 	}
 
 	// Check if the destination file exists.
@@ -185,6 +212,30 @@ func createFdfFile(form Form, path string) error {
 
 	// Flush everything.
 	return w.Flush()
+}
+
+func createMetadataFile(formPDFFile, path string) error {
+	// Create the file.
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	out, err := runCommandInPath("", "pdftk", formPDFFile, "dump_data")
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(out.Bytes()), "\n")
+	for i := range lines {
+		if strings.HasPrefix(lines[i], "InfoValue:") {
+			lines[i] = "InfoValue:"
+		}
+	}
+
+	_, err = file.Write([]byte(strings.Join(lines, "\n")))
+	return err
 }
 
 const fdfHeader = `%FDF-1.2

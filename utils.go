@@ -69,18 +69,19 @@ func copyFile(src, dst string) (err error) {
 // runCommandInPath runs a command and waits for it to exit.
 // The working directory is also set.
 // The stderr error message is returned on error.
-func runCommandInPath(dir, name string, args ...string) error {
+func runCommandInPath(dir, name string, args ...string) (*bytes.Buffer, error) {
 	// Create the command.
-	var stderr bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd := exec.Command(name, args...)
+	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.Dir = dir
 
 	// Start the command and wait for it to exit.
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf(strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf(strings.TrimSpace(stderr.String()))
 	}
 
-	return nil
+	return &stdout, nil
 }
