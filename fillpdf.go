@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/encoding"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 var (
@@ -44,18 +45,30 @@ type Form map[string]interface{}
 // Options represents the options to alter the PDF filling process
 type Options struct {
 	// Overwrite will overwrite any pre existing filled PDF
-	Overwrite bool
+	Overwrite *wrapperspb.BoolValue
 	// Flatten will flatten the document making the form fields no longer editable
-	Flatten bool
+	Flatten *wrapperspb.BoolValue
 	// Remove metadata
-	RemoveMetadata bool
+	RemoveMetadata *wrapperspb.BoolValue
+}
+
+func (o *Options) Override(opt Options) {
+	if opt.Overwrite != nil {
+		o.Overwrite = opt.Overwrite
+	}
+	if opt.Flatten != nil {
+		o.Flatten = opt.Flatten
+	}
+	if opt.RemoveMetadata != nil {
+		o.RemoveMetadata = opt.RemoveMetadata
+	}
 }
 
 func defaultOptions() Options {
 	return Options{
-		Overwrite:      true,
-		Flatten:        true,
-		RemoveMetadata: false,
+		Overwrite:      wrapperspb.Bool(true),
+		Flatten:        wrapperspb.Bool(true),
+		RemoveMetadata: wrapperspb.Bool(false),
 	}
 }
 
@@ -64,8 +77,8 @@ func defaultOptions() Options {
 func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err error) {
 	// If the user provided the options we overwrite the defaults with the given struct.
 	opts := defaultOptions()
-	if len(options) > 0 {
-		opts = options[0]
+	for _, opt := range options {
+		opts.Override(opt)
 	}
 
 	// Get the absolute paths.
@@ -99,7 +112,7 @@ func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err e
 	}
 
 	var metadataFile string
-	if opts.RemoveMetadata {
+	if opts.RemoveMetadata.GetValue() {
 		metadataFile = filepath.Clean(tmpDir + "/metadata.tmp")
 		errM := createMetadataFile(formPDFFile, metadataFile)
 		if errM != nil {
@@ -134,7 +147,7 @@ func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err e
 	}
 
 	// If the user specified to flatten the output PDF we append the related parameter.
-	if opts.Flatten {
+	if opts.Flatten.GetValue() {
 		args = append(args, "flatten")
 	}
 
@@ -144,7 +157,7 @@ func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err e
 		return fmt.Errorf("pdftk error: %v", err)
 	}
 
-	if opts.RemoveMetadata {
+	if opts.RemoveMetadata.GetValue() {
 		outputFile2 := filepath.Clean(tmpDir + "output2.pdf")
 		args = []string{
 			outputFile,
@@ -163,7 +176,7 @@ func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err e
 	if err != nil {
 		return fmt.Errorf("failed to check if destination PDF file exists: %v", err)
 	} else if e {
-		if !opts.Overwrite {
+		if !opts.Overwrite.GetValue() {
 			return fmt.Errorf("destination PDF file already exists: '%s'", destPDFFile)
 		}
 
