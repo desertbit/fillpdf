@@ -36,9 +36,26 @@ var (
 	latin1Encoder = encoding.ISO8859_1.NewEncoder()
 )
 
+type FormOption interface {
+	String() string
+}
+
+type TextOption string
+
+func (t TextOption) String() string { return "(" + string(t) + ")" }
+
+type ButtonOption bool
+
+func (b ButtonOption) String() string {
+	if b {
+		return "/1"
+	}
+	return "/Off"
+}
+
 // Form represents the PDF form.
 // This is a key value map.
-type Form map[string]interface{}
+type Form map[string]FormOption
 
 // Options represents the options to alter the PDF filling process
 type Options struct {
@@ -177,7 +194,7 @@ func createFdfFile(form Form, path string) error {
 		if err != nil {
 			return fmt.Errorf("failed to convert string to Latin-1")
 		}
-		fmt.Fprintf(w, "<< /T (%s) /V (%s)>>\n", key, valueStr)
+		fmt.Fprintf(w, "<< /T (%s) /V %s>>\n", key, valueStr)
 	}
 
 	// Write the fdf footer.
