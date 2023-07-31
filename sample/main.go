@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/desertbit/fillpdf"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -15,10 +16,13 @@ func main() {
 	}
 
 	// Fill the form PDF with our values.
-	err := fillpdf.Fill(form, "form.pdf", "filled.pdf", fillpdf.Options{
+	out, err := fillpdf.Fill(form, "form.pdf", fillpdf.Options{
 		RemoveMetadata: wrapperspb.Bool(true),
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	os.WriteFile("filled.pdf", out, 0600)
+
 }
