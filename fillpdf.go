@@ -19,15 +19,14 @@
 package fillpdf
 
 import (
-	"bufio"
+	"bytes"
+	"errors"
 	"fmt"
-	"io/ioutil"
-	"log"
-	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/gdamore/encoding"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 var (
@@ -42,132 +41,100 @@ type Form map[string]interface{}
 
 // Options represents the options to alter the PDF filling process
 type Options struct {
-	// Overwrite will overwrite any pre existing filled PDF
-	Overwrite bool
 	// Flatten will flatten the document making the form fields no longer editable
-	Flatten bool
+	Flatten *wrapperspb.BoolValue
+	// Remove metadata
+	RemoveMetadata *wrapperspb.BoolValue
+}
+
+func (o *Options) Override(opt Options) {
+	if opt.Flatten != nil {
+		o.Flatten = opt.Flatten
+	}
+	if opt.RemoveMetadata != nil {
+		o.RemoveMetadata = opt.RemoveMetadata
+	}
 }
 
 func defaultOptions() Options {
 	return Options{
-		Overwrite: true,
-		Flatten:   true,
+		Flatten:        wrapperspb.Bool(true),
+		RemoveMetadata: wrapperspb.Bool(false),
 	}
 }
 
 // Fill a PDF form with the specified form values and create a final filled PDF file.
 // The options parameter alters few aspects of the generation.
-func Fill(form Form, formPDFFile, destPDFFile string, options ...Options) (err error) {
+func Fill(form Form, formPDFFile string, options ...Options) (out []byte, err error) {
 	// If the user provided the options we overwrite the defaults with the given struct.
 	opts := defaultOptions()
-	if len(options) > 0 {
-		opts = options[0]
+	for _, opt := range options {
+		opts.Override(opt)
 	}
 
 	// Get the absolute paths.
 	formPDFFile, err = filepath.Abs(formPDFFile)
 	if err != nil {
-		return fmt.Errorf("failed to create the absolute path: %v", err)
-	}
-	destPDFFile, err = filepath.Abs(destPDFFile)
-	if err != nil {
-		return fmt.Errorf("failed to create the absolute path: %v", err)
+		return nil, fmt.Errorf("failed to create the absolute path: %v", err)
 	}
 
 	// Check if the form file exists.
 	e, err := exists(formPDFFile)
 	if err != nil {
-		return fmt.Errorf("failed to check if form PDF file exists: %v", err)
+		return nil, fmt.Errorf("failed to check if form PDF file exists: %v", err)
 	} else if !e {
-		return fmt.Errorf("form PDF file does not exists: '%s'", formPDFFile)
+		return nil, fmt.Errorf("form PDF file does not exists: '%s'", formPDFFile)
 	}
 
 	// Check if the pdftk utility exists.
 	_, err = exec.LookPath("pdftk")
 	if err != nil {
-		return fmt.Errorf("pdftk utility is not installed!")
+		return nil, errors.New("pdftk utility is not installed!")
 	}
 
-	// Create a temporary directory.
-	tmpDir, err := ioutil.TempDir("", "fillpdf-")
+	// Create the fdf content.
+	fdfContent, err := createFdfFile(form)
 	if err != nil {
-		return fmt.Errorf("failed to create temporary directory: %v", err)
-	}
-
-	// Remove the temporary directory on defer again.
-	defer func() {
-		errD := os.RemoveAll(tmpDir)
-		// Log the error only.
-		if errD != nil {
-			log.Printf("fillpdf: failed to remove temporary directory '%s' again: %v", tmpDir, errD)
-		}
-	}()
-
-	// Create the temporary output file path.
-	outputFile := filepath.Clean(tmpDir + "/output.pdf")
-
-	// Create the fdf data file.
-	fdfFile := filepath.Clean(tmpDir + "/data.fdf")
-	err = createFdfFile(form, fdfFile)
-	if err != nil {
-		return fmt.Errorf("failed to create fdf form data file: %v", err)
+		return nil, fmt.Errorf("failed to create fdf form data file: %v", err)
 	}
 
 	// Create the pdftk command line arguments.
 	args := []string{
 		formPDFFile,
-		"fill_form", fdfFile,
-		"output", outputFile,
+		"fill_form", "-",
+		"output", "-",
 	}
 
 	// If the user specified to flatten the output PDF we append the related parameter.
-	if opts.Flatten {
+	if opts.Flatten.GetValue() {
 		args = append(args, "flatten")
 	}
 
 	// Run the pdftk utility.
-	err = runCommandInPath(tmpDir, "pdftk", args...)
+	output, err := runCommand("pdftk", bytes.NewBuffer([]byte(fdfContent)), args...)
 	if err != nil {
-		return fmt.Errorf("pdftk error: %v", err)
+		return nil, fmt.Errorf("pdftk error: %v", err)
 	}
 
-	// Check if the destination file exists.
-	e, err = exists(destPDFFile)
-	if err != nil {
-		return fmt.Errorf("failed to check if destination PDF file exists: %v", err)
-	} else if e {
-		if !opts.Overwrite {
-			return fmt.Errorf("destination PDF file already exists: '%s'", destPDFFile)
-		}
-
-		err = os.Remove(destPDFFile)
+	if opts.RemoveMetadata.GetValue() {
+		// Check if the exiftool utility exists.
+		_, err = exec.LookPath("exiftool")
 		if err != nil {
-			return fmt.Errorf("failed to remove destination PDF file: %v", err)
+			return nil, errors.New("exiftool utility is not installed!")
+		}
+		// exiftool -all:all= - -o -
+		output, err = runCommand("exiftool", output, "-all:all=", "-", "-o", "-")
+		if err != nil {
+			return nil, fmt.Errorf("exiftool error: %v", err)
 		}
 	}
 
-	// On success, copy the output file to the final destination.
-	err = copyFile(outputFile, destPDFFile)
-	if err != nil {
-		return fmt.Errorf("failed to copy created output PDF to final destination: %v", err)
-	}
-
-	return nil
+	return output.Bytes(), nil
 }
 
-func createFdfFile(form Form, path string) error {
-	// Create the file.
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// Create a new writer.
-	w := bufio.NewWriter(file)
-
+func createFdfFile(form Form) (output string, err error) {
 	// Write the fdf header.
-	fmt.Fprintln(w, fdfHeader)
+	output = fdfHeader
 
 	// Write the form data.
 	var valueStr string
@@ -175,16 +142,14 @@ func createFdfFile(form Form, path string) error {
 		// Convert to Latin-1.
 		valueStr, err = latin1Encoder.String(fmt.Sprintf("%v", value))
 		if err != nil {
-			return fmt.Errorf("failed to convert string to Latin-1")
+			return "", fmt.Errorf("failed to convert string to Latin-1")
 		}
-		fmt.Fprintf(w, "<< /T (%s) /V (%s)>>\n", key, valueStr)
+		output += fmt.Sprintf("<< /T (%s) /V (%s)>>\n", key, valueStr)
 	}
 
 	// Write the fdf footer.
-	fmt.Fprintln(w, fdfFooter)
-
-	// Flush everything.
-	return w.Flush()
+	output += fdfFooter
+	return output, nil
 }
 
 const fdfHeader = `%FDF-1.2
